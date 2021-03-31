@@ -83,7 +83,7 @@ First let's make sure there aren't multiple kinds of hyphens.
 ```{r}
 # en and em dash
 str_subset(dispositions$period,
-           "(–|—")
+           "(–|—)")
 ```
 
 This is gnarly and will get tucked into a function later.

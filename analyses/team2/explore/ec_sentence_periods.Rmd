@@ -20,7 +20,7 @@ The sentencing information from dispositions is pretty messy. Let's take a look 
 
 ```{r}
 dispositions <- read_csv(file.path(rprojroot::find_root(rprojroot::is_rstudio_project),
-                                   "data", "offenses_dispositions.csv"),
+                                   "data", "offenses_dispositions_v1.csv"),
                          col_types = cols(
   docket_id = col_double(),
   description = col_character(),
@@ -150,3 +150,12 @@ clean_periods_split %>%
 ```
 
 At this point I'd like to have a way of dealing with `time_served`, or know that there is no good way to deal with it, before proceding. 
+
+Quick look at IPP sentences.
+
+```{r}
+dispositions %>%
+  filter(!is.na(period),
+         str_detect(period, fixed("ipp", ignore_case = TRUE)))
+```
+

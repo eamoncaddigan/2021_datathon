@@ -10,10 +10,13 @@ library(tidyverse)
 ```
 
 This loads AW's functions into my namespace (and makes them available).
+Also let's load in my functions.
 
 ```{r}
 source(file.path(rprojroot::find_root(rprojroot::is_rstudio_project),
                  "analyses", "team1", "exploration", "aw_functions.R"))
+source(file.path(rprojroot::find_root(rprojroot::is_rstudio_project),
+                 "analyses", "team2", "preprocess", "ec_functions.R"))
 ```
 
 The sentencing information from dispositions is pretty messy. Let's take a look at the most common values. This is a large file but a modern computer should fit it into RAM without much trouble.
@@ -270,6 +273,17 @@ Let's make sure we didn't create new `NA` values.
 
 ```{r}
 dispositions$period[!is.na(dispositions$period) & is.na(clean_periods)]
+```
+
+## Check the function
+
+Now that I've copied the period-cleaning code into a function, check that it returns the same results as the code above.
+
+```{r}
+all.equal(clean_dispositions_periods(dispositions$period,
+                                     dispositions$min_period,
+                                     dispositions$max_period),
+          clean_periods_split)
 ```
 
 # Other checks

@@ -20,7 +20,7 @@ The sentencing information from dispositions is pretty messy. Let's take a look 
 
 ```{r}
 dispositions <- read_csv(file.path(rprojroot::find_root(rprojroot::is_rstudio_project),
-                                   "data", "offenses_dispositions_v1.csv"),
+                                   "data", "offenses_dispositions_v2.csv"),
                          col_types = cols(
   docket_id = col_double(),
   description = col_character(),
@@ -156,6 +156,7 @@ Quick look at IPP sentences.
 ```{r}
 dispositions %>%
   filter(!is.na(period),
-         str_detect(period, fixed("ipp", ignore_case = TRUE)))
+         str_detect(period, fixed("ipp", ignore_case = TRUE))) %>%
+  select(description, period, sentence_type)
 ```
 

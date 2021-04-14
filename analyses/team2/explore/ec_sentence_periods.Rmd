@@ -20,11 +20,13 @@ The sentencing information from dispositions is pretty messy. Let's take a look 
 
 ```{r}
 dispositions <- read_csv(file.path(rprojroot::find_root(rprojroot::is_rstudio_project),
-                                   "data", "offenses_dispositions_v2.csv"),
+                                   "data", "offenses_dispositions_v3.csv"),
                          col_types = cols(
+  X1 = col_double(),
   docket_id = col_double(),
   description = col_character(),
   statute_description = col_character(),
+  statute_name = col_character(),
   sequence_number = col_double(),
   grade = col_character(),
   disposition = col_character(),
@@ -37,6 +39,7 @@ dispositions <- read_csv(file.path(rprojroot::find_root(rprojroot::is_rstudio_pr
   min_period = col_character(),
   max_period = col_character(),
   period = col_character(),
+  credit = col_double(),
   sentence_type = col_character()
 ))
 ```
@@ -48,7 +51,7 @@ dispositions %>%
   summarize(across(c(min_period, max_period, period), n_distinct))
 ```
 
-Wow, that's a lot of different ways to write things. Print the first 20 rows of the sentence `period`s to see what we're dealing with.
+Wow, that's a lot of different ways to write things. Print the first 10 rows of the sentence `period`s to see what we're dealing with.
 
 ```{r}
 dispositions %>%
@@ -61,6 +64,7 @@ AW's functions currently focus on `min_period` and `max_period`. Are these relia
 
 ```{r}
 dispositions %>%
+  filter(across(ends_with("period"), ~!is.na(.))) %>%
   select(ends_with("period"))
 ```
 
@@ -74,11 +78,51 @@ dispositions %>%
   head(20)
 ```
 
-No, unfortunately not — there are plenty of cases where both `min_period` and `max_period` are `NA`, but `period` contains valid data.
+No, unfortunately not — there are plenty of cases where both `min_period` and `max_period` are `NA`, but `period` contains valid data. What about the converse?
+
+```{r}
+dispositions %>%
+ filter(is.na(period),
+        !is.na(min_period) | !is.na(max_period)) %>%
+  count(period) %>%
+  arrange(desc(n)) %>%
+  head(20)
+```
+
+There are _no_ cases where `period` is `NA` and either of `min_period` or `max_period` have data. That's good! But I noticed some rows with `period` set to "Other", but times present in the other columns. Let's look more closely for cases like that.
+
+```{r}
+# Select the rows for which `period` _only_ contains text
+dispositions %>%
+  filter(str_detect(period, "^[^[:digit:]]*$"),
+         !is.na(min_period) | !is.na(max_period)) %>%
+  count(period) %>%
+  arrange(desc(n))
+```
+```{r}
+dispositions %>%
+  filter(period == "Other",
+         !is.na(min_period) | !is.na(max_period)) %>%
+  count(min_period, max_period, period) %>%
+  arrange(desc(n)) %>%
+  head()
+```
+
+Are both `min_period` and `max_period` always available when `period` is "Other"?
+
+```{r}
+dispositions %>%
+  filter(period == "Other") %>%
+  mutate(periods_present = case_when(is.na(min_period) & is.na(max_period) ~ "both missing",
+                                     is.na(min_period) ~ "min missing",
+                                     is.na(max_period) ~ "max missing",
+                                     TRUE ~ "neither missing")) %>%
+  count(periods_present)
+```
 
 # Okay let's start dealing with periods
 
-First let's make sure there aren't multiple kinds of hyphens.
+First, let's make sure there aren't multiple kinds of hyphens.
 
 ```{r}
 # en and em dash
@@ -89,11 +133,53 @@ str_subset(dispositions$period,
 This is gnarly and will get tucked into a function later.
 
 ```{r}
-clean_periods <- dispositions$period %>%
+# First, we'll replace "Other" in period by data from min_period and max_period
+# when those are available. This code is quite ugly, but it should be quicker
+# than approaches that process every single row multiple times.
+clean_periods <- dispositions$period
+
+period_is_other <- !is.na(clean_periods) &
+  tolower(clean_periods) == "other"
+clean_periods[period_is_other &
+                !is.na(dispositions$min_period) &
+                !is.na(dispositions$max_period)] <-
+  paste(dispositions$min_period[period_is_other &
+                                  !is.na(dispositions$min_period) &
+                                  !is.na(dispositions$max_period)],
+        "-",
+        dispositions$max_period[period_is_other &
+                                  !is.na(dispositions$min_period) &
+                                  !is.na(dispositions$max_period)])
+clean_periods[period_is_other &
+                is.na(dispositions$min_period) &
+                !is.na(dispositions$max_period)] <-
+  dispositions$max_period[period_is_other &
+                            is.na(dispositions$min_period) &
+                            !is.na(dispositions$max_period)]
+clean_periods[period_is_other &
+                !is.na(dispositions$min_period) &
+                is.na(dispositions$max_period)] <-
+  dispositions$min_period[period_is_other &
+                            !is.na(dispositions$min_period) &
+                            is.na(dispositions$max_period)]
+clean_periods[period_is_other] <- str_replace_all(clean_periods[period_is_other],
+                                                  "\\.00", "")
+
+# Do basic cleanup
+clean_periods <- clean_periods %>%
   tolower() %>%
   str_replace_all("[[:blank:]]+", " ") %>%
   str_replace("^ ", "") %>%
   str_replace_all(" $", "")
+
+# FOR NOW we're going to throw out extra information about IPP
+clean_periods <- str_replace(clean_periods,
+                             "day modification of ipp sentence", "days")
+
+# Make life without parole more token-like
+clean_periods <- str_replace(clean_periods,
+                             "life without the possibility of parole",
+                             "life_no_parole")
 
 # Deal with the many ways of writing ".5"
 clean_periods <- clean_periods %>%
@@ -105,7 +191,9 @@ clean_periods <- clean_periods %>%
 clean_periods <- clean_periods %>%
   str_replace("tiime", "time") %>%
   str_replace("tim ", "time") %>%
-  str_replace("time[ -]?(served|in)", "time_served")
+  str_replace("time[ -]?(served|in)", "time_served") %>%
+  str_replace("balance of backtime", "time_served") %>%
+  str_replace("back time", "time_served")
 
 # Standardize units
 clean_periods <- clean_periods %>%
@@ -115,11 +203,20 @@ clean_periods <- clean_periods %>%
   str_replace_all("month(?!s)", "months") %>%
   str_replace_all("year(?!s)",  "years")
 
+# Remove "flat"
+clean_periods <- str_replace(clean_periods, " flat", "")
+
+# Remove "BCP"
+clean_periods <- str_replace(clean_periods, " bcp", "")
+
 # Standardize the "time arithmetic"
 clean_periods <- clean_periods %>%
+  str_replace_all(", ", " plus ") %>%
   str_replace_all(" and ", " plus ") %>%
   str_replace_all(" less ", " minus ")
-# This one's tricky, in part because str_replace_all is greedier than it should be
+
+# This one's tricky, in part because str_replace_all is greedier than it should
+# be. Turn entries like "2 years 6 months" into "2 years plus six months".
 operator_insertion_regexp <- "^([[:digit:]]+) ([[:alpha:]]+) ([[:digit:]]+) ([[:alpha:]]+)$"
 needs_operator_inserted <- !is.na(clean_periods) &
   str_detect(clean_periods, operator_insertion_regexp) & 
@@ -131,7 +228,6 @@ clean_periods[needs_operator_inserted] <- str_replace_all(clean_periods[needs_op
 # Split the periods using "-" or "to"
 clean_periods_split <- clean_periods %>%
   str_split_fixed("\\s?((\\bto\\b)|-)\\s?", 2)
-  #str_split_fixed("\\s?((\\bto\\b)|(-(?!.*\\bto\\b)))\\s?", 2)
 
 # If the beginning period is missing a time unit (days, months, years), grab it from the end period
 is_missing_units <- str_detect(clean_periods_split[, 1], "^[[:digit:]]+(\\.5)?$")
@@ -142,14 +238,41 @@ missing_units <- clean_periods_split[is_missing_units, 2] %>%
 clean_periods_split[is_missing_units, 1] <- paste(clean_periods_split[is_missing_units, 1],
                                                    missing_units, sep = " ")
 
-clean_periods_split %>%
-  as.data.frame() %>%
-  distinct() %>%
-  arrange(desc(V1)) %>%
-  print.AsIs()
+# Last thing: if there's only one entry, str_split puts it in the first column,
+# have it swap spaces with the second.
+is_missing_max <- clean_periods_split[, 2] == ""
+clean_periods_split[is_missing_max, 2] <- clean_periods_split[is_missing_max, 1]
+clean_periods_split[is_missing_max, 1] <- ""
 ```
 
-At this point I'd like to have a way of dealing with `time_served`, or know that there is no good way to deal with it, before proceding. 
+Let's look at the unique entries
+
+```{r}
+# Look at all the unique entries
+clean_periods_split %>%
+  as.character() %>%
+  table() %>%
+  enframe() %>% 
+  arrange(desc(value))
+```
+
+And the most popular combinations
+
+```{r}
+clean_periods_split %>%
+  as.data.frame() %>%
+  count(V1, V2) %>%
+  arrange(desc(n)) %>%
+  head(40)
+```
+
+Let's make sure we didn't create new `NA` values.
+
+```{r}
+dispositions$period[!is.na(dispositions$period) & is.na(clean_periods)]
+```
+
+# Other checks
 
 Quick look at IPP sentences.
 
@@ -157,6 +280,6 @@ Quick look at IPP sentences.
 dispositions %>%
   filter(!is.na(period),
          str_detect(period, fixed("ipp", ignore_case = TRUE))) %>%
-  select(description, period, sentence_type)
+  count(period, sentence_type)
 ```
 

@@ -110,11 +110,16 @@ clean_dispositions_periods <- function(period, min_period, max_period) {
   clean_periods_split[is_missing_units, 1] <- paste(clean_periods_split[is_missing_units, 1],
                                                     missing_units, sep = " ")
   
-  # Last thing: if there's only one entry, str_split puts it in the first column,
-  # have it swap spaces with the second.
-  is_missing_max <- clean_periods_split[, 2] == ""
+  # Replace the blanks with explicit NAs when period was NA
+  clean_periods_split[is.na(period), ] <- NA
+  
+  # If there's only one entry, str_split puts it in the first column, have it
+  # swap spaces with the second and set the min_period to NA
+  is_missing_max <- !is.na(clean_periods_split[, 2]) & 
+    clean_periods_split[, 2] == "" &
+    clean_periods_split[, 1] != ""
   clean_periods_split[is_missing_max, 2] <- clean_periods_split[is_missing_max, 1]
-  clean_periods_split[is_missing_max, 1] <- ""
+  clean_periods_split[is_missing_max, 1] <- NA
   
   clean_periods_split
 }

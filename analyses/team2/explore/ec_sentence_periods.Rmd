@@ -125,7 +125,17 @@ dispositions %>%
 
 # Okay let's start dealing with periods
 
-First, let's make sure there aren't multiple kinds of hyphens.
+First, a quick look at IPP sentences.
+
+```{r}
+dispositions %>%
+  filter(!is.na(period),
+         str_detect(period, fixed("ipp", ignore_case = TRUE))) %>%
+  count(period, sentence_type)
+```
+
+
+Ok, let's make sure there aren't multiple kinds of hyphens.
 
 ```{r}
 # en and em dash
@@ -241,11 +251,16 @@ missing_units <- clean_periods_split[is_missing_units, 2] %>%
 clean_periods_split[is_missing_units, 1] <- paste(clean_periods_split[is_missing_units, 1],
                                                    missing_units, sep = " ")
 
-# Last thing: if there's only one entry, str_split puts it in the first column,
-# have it swap spaces with the second.
-is_missing_max <- clean_periods_split[, 2] == ""
+# Replace the blanks with explicit NAs when period was NA
+clean_periods_split[is.na(dispositions$period), ] <- NA
+
+# If there's only one entry, str_split puts it in the first column, have it swap
+# spaces with the second.
+is_missing_max <- !is.na(clean_periods_split[, 2]) & 
+  clean_periods_split[, 2] == "" &
+  clean_periods_split[, 1] != ""
 clean_periods_split[is_missing_max, 2] <- clean_periods_split[is_missing_max, 1]
-clean_periods_split[is_missing_max, 1] <- ""
+clean_periods_split[is_missing_max, 1] <- NA
 ```
 
 Let's look at the unique entries
@@ -285,15 +300,3 @@ all.equal(clean_dispositions_periods(dispositions$period,
                                      dispositions$max_period),
           clean_periods_split)
 ```
-
-# Other checks
-
-Quick look at IPP sentences.
-
-```{r}
-dispositions %>%
-  filter(!is.na(period),
-         str_detect(period, fixed("ipp", ignore_case = TRUE))) %>%
-  count(period, sentence_type)
-```
-

@@ -2,9 +2,9 @@
 # something pretty clunky and over-engineered, but it only downloads data that
 # hasn't already been saved. This could have been a makefile.
 
-if (!require("rprojroot")) {
-  stop("Please install the rprojroot package before running this script.")
-}
+# Get ready to use rprojroot without attaching it to the namespace, and throw an
+# error if it's missing.
+loadNamespace("rprojroot")
 
 # Find the root directory and throw a (hopefully) more helpful error message if
 # this isn't an RStudio project.

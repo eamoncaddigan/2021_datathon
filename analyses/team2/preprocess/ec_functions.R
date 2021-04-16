@@ -11,7 +11,7 @@
 #' @param max_period A character vector giving some minimum periods
 #'
 #' @return A two-column character matrix with the minimum and maximum period.
-#'   Missing data is returned as a blank string.
+#'   Missing data is returned as `NA`.
 #' @export
 clean_dispositions_periods <- function(period, min_period, max_period) {
   clean_periods <- period
@@ -122,4 +122,45 @@ clean_dispositions_periods <- function(period, min_period, max_period) {
   clean_periods_split[is_missing_max, 1] <- NA
   
   clean_periods_split
+}
+
+
+#' Convert a (cleaned) disposition period into a number of days.
+#'
+#' Take the output of `clean_dispositions_periods()` (with strings like "2 years
+#' plus 6 months") and convert them into a number of days. The mean number of
+#' days in a year/month is used for the conversion. The string "time_served" is
+#' substituted with the value passed to `time_served`. Strings that don't
+#' conform to the pattern (including valid sentence periods, such as "life") are
+#' returned as `NA`.
+#'
+#' @param period_clean A character column returned by
+#'   `clean_dispositions_periods()`
+#' @param time_served A numeric column giving the time served
+#'
+#' @return A numeric vector.
+#' @export
+clean_period_to_days <- function(period_clean, time_served = NA) {
+  # Helper function to convert, e.g. "1 month" to ~30 days.
+  units_to_days <- function(x, y) {
+    duration_match <- stringr::str_match(x, 
+                                         "^(-?[[:digit:]]+(\\.[[:digit:]]+)?) ([[:alpha:]]+)$")
+    duration_numeric <- as.numeric(duration_match[, 2])
+    duration_multiplicand <- dplyr::case_when(duration_match[, 4] == "years" ~ (366 * 97 + 365 * (400 - 97)) / 400,
+                                              duration_match[, 4] == "months" ~ (366 * 97 + 365 * (400 - 97)) / (400*12),
+                                              duration_match[, 4] == "days" ~ 1,
+                                              duration_match[, 4] == "hours" ~ 1/24,
+                                              TRUE ~ NA_real_)
+    
+    ifelse(x == "time_served",
+           y,
+           duration_numeric * duration_multiplicand)
+  }
+  
+  period_split <- stringr::str_split(stringr::str_replace_all(period_clean, 
+                                                              " minus ", 
+                                                              " plus -"),
+                                     " plus ")
+
+  purrr::map2_dbl(period_split, time_served, ~sum(units_to_days(.x, .y)))
 }

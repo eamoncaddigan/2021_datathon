@@ -1,0 +1,68 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Now that sentencing periods are available in days, we can do some exploration of how different variables affect sentence type and length.
+
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(rprojroot))
+```
+
+In this notebook I'm only going to examine data that are present in the `offenses_dispositions` data file. Please keep in mind that there's other info that can be merged with this which may be useful.
+
+```{r}
+dispositions <- read_csv(file.path(find_root(is_rstudio_project), "data",
+                                   "offenses_dispositions_v3_periods.csv"),
+                         col_types = cols(
+  X1 = col_double(),
+  docket_id = col_double(),
+  description = col_character(),
+  statute_description = col_character(),
+  statute_name = col_character(),
+  sequence_number = col_double(),
+  grade = col_character(),
+  disposition = col_character(),
+  disposing_authority__first_name = col_character(),
+  disposing_authority__middle_name = col_character(),
+  disposing_authority__last_name = col_character(),
+  disposing_authority__title = col_character(),
+  disposing_authority__document_name = col_character(),
+  disposition_method = col_character(),
+  min_period = col_character(),
+  max_period = col_character(),
+  period = col_character(),
+  credit = col_double(),
+  sentence_type = col_factor(levels = c("No Further Penalty",
+                                        "Merged",
+                                        "Probation",
+                                        "IPP",
+                                        "Confinement")),
+  min_period_parsed = col_character(),
+  max_period_parsed = col_character(),
+  min_period_days = col_double(),
+  max_period_days = col_double()
+))
+```
+
+First let's just look at the distribution of sentence periods for different types of sentences.
+
+```{r}
+dispositions %>%
+  filter(!is.na(max_period_days),
+         max_period_days > 0) %>%
+  mutate(max_period_months = max_period_days * 400 * 12 / 
+           (97*366 + (400-97)*365)) %>%
+  ggplot(aes(max_period_months)) +
+  geom_density() + 
+  scale_x_log10() +
+  facet_wrap(~ sentence_type,
+             scales = "free") +
+  theme_minimal() +
+  labs(x = "Maximum sentence period (months)")
+```
+
+The three sentence types have very different distributions, but all are "spiky" with some sentences more common than others. For instance, the modal prison sentence is 2 years. 
+
+Perhaps it makes more sense to model the binary outcome, "was the defendant sentenced to confinement for more than 2 years?", than to attempt to predict the actual sentence length. We're also focusing on the maximum period for sentences, since it was given more often than the minimum.
